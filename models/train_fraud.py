@@ -5,12 +5,16 @@ This script trains scikit-learn classifiers (Random Forest, Logistic Regression,
 handles class imbalance with SMOTE, evaluates all models, logs metrics to MLflow, and
 saves the best model as a joblib artifact.
 
+Dataset Setup:
+    Download the dataset and place it at: data/creditcard.csv
+    Command: curl -L -o data/creditcard.csv "https://storage.googleapis.com/download.tensorflow.org/data/creditcard.csv"
+
 Expected dataset path:
     finsight-ai/data/creditcard.csv
 
 The repository does not include the Kaggle dataset by default because it is
-large and requires a Kaggle login. Place `creditcard.csv` in the `data/`
-folder and rerun this script.
+large (144MB) and requires a Kaggle login. Download it using the command above
+and rerun this script.
 """
 
 from __future__ import annotations

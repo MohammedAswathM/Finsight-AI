@@ -18,6 +18,9 @@ cp .env.example .env     # then edit GROQ_API_KEY
 python -m models.train_forecaster
 
 # 4.5 Train the fraud detection model (optional until dataset is available)
+# Download the dataset first:
+curl -L -o data/creditcard.csv "https://storage.googleapis.com/download.tensorflow.org/data/creditcard.csv"
+# Then train the model:
 python -m models.train_fraud
 
 # 5. Smoke-test the orchestrator end-to-end (uses stubs for unmerged agents)
