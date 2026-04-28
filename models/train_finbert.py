@@ -40,6 +40,11 @@ from config import MLFLOW_TRACKING_URI
 BASE_MODEL = "ProsusAI/finbert"
 OUT_DIR = Path(__file__).parent / "finbert-finetuned"
 
+# ProsusAI/finbert label mapping: {0: positive, 1: negative, 2: neutral}
+# Financial PhraseBank label mapping: {0: negative, 1: neutral, 2: positive}
+# Need to remap base model predictions to FPB labels for fair comparison
+BASE_TO_FPB = {0: 2, 1: 0, 2: 1}
+
 
 def _set_mlflow_uri() -> None:
     if MLFLOW_TRACKING_URI:
@@ -64,6 +69,7 @@ def _eval_model(
     tokenized_test,
     tokenizer,
     data_collator,
+    is_base_model: bool = False,
 ) -> Tuple[Dict[str, float], np.ndarray]:
     model = AutoModelForSequenceClassification.from_pretrained(model_name_or_path)
     args = TrainingArguments(
@@ -84,6 +90,11 @@ def _eval_model(
     preds = trainer.predict(tokenized_test).predictions
     y_pred = np.argmax(preds, axis=-1)
     y_true = np.array(tokenized_test["label"])
+    
+    # Remap base model predictions from ProsusAI/finbert to Financial PhraseBank labels
+    if is_base_model:
+        y_pred = np.array([BASE_TO_FPB[int(p)] for p in y_pred])
+    
     cm = confusion_matrix(y_true, y_pred, labels=[0, 1, 2])
     metrics = {"accuracy": float(out.get("eval_accuracy", 0.0)), "f1_macro": float(out.get("eval_f1_macro", 0.0))}
     return metrics, cm
@@ -127,7 +138,7 @@ def main() -> None:
         # -----------------------
         # Base model evaluation
         # -----------------------
-        base_metrics, base_cm = _eval_model(BASE_MODEL, tokenized_test, tokenizer, data_collator)
+        base_metrics, base_cm = _eval_model(BASE_MODEL, tokenized_test, tokenizer, data_collator, is_base_model=True)
         mlflow.log_metric("base_accuracy", base_metrics["accuracy"])
         mlflow.log_metric("base_f1_macro", base_metrics["f1_macro"])
 

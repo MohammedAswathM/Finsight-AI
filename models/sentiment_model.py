@@ -17,10 +17,6 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 _BASE_MODEL = "ProsusAI/finbert"
 _FINETUNED_DIR = Path(__file__).parent / "finbert-finetuned"
 
-# Financial PhraseBank / FinBERT label convention is commonly:
-# 0=negative, 1=neutral, 2=positive
-_ID2LABEL = {0: "negative", 1: "neutral", 2: "positive"}
-
 
 @lru_cache(maxsize=2)
 def _load_tokenizer_and_model():
@@ -28,7 +24,9 @@ def _load_tokenizer_and_model():
     tok = AutoTokenizer.from_pretrained(model_source, use_fast=True)
     model = AutoModelForSequenceClassification.from_pretrained(model_source)
     model.eval()
-    return tok, model
+    # Read label mapping from model config to handle both base and fine-tuned models
+    id2label = {int(k): v.lower() for k, v in model.config.id2label.items()}
+    return tok, model, id2label
 
 
 def predict_sentiment(text: str) -> Dict[str, object]:
@@ -41,7 +39,7 @@ def predict_sentiment(text: str) -> Dict[str, object]:
     if not text:
         return {"label": "neutral", "score": 0.0, "summary": "NEUTRAL (0.00)"}
 
-    tok, model = _load_tokenizer_and_model()
+    tok, model, id2label = _load_tokenizer_and_model()
     inputs = tok(text, return_tensors="pt", truncation=True, max_length=128)
 
     with torch.no_grad():
@@ -49,7 +47,7 @@ def predict_sentiment(text: str) -> Dict[str, object]:
         probs = torch.softmax(outputs.logits, dim=-1).squeeze(0)
         score, idx = torch.max(probs, dim=-1)
 
-    label = _ID2LABEL.get(int(idx), str(int(idx)))
+    label = id2label.get(int(idx), "neutral")
     score_f = float(score.item())
     return {"label": label, "score": score_f, "summary": f"{label.upper()} ({score_f:.2f})"}
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 import sqlite3
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import pandas as pd
 
@@ -214,7 +214,7 @@ def get_sql_agent() -> SQLAgent:
     return _sql_agent
 
 
-def run_sql(state: AgentState) -> AgentState:
+def run_sql(state: AgentState) -> Dict[str, Any]:
     """Execute SQL query based on user's natural language input.
     
     Required signature for orchestrator integration.

@@ -10,9 +10,10 @@ from __future__ import annotations
 import sys
 import re
 import sqlite3
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import pandas as pd
 
@@ -162,8 +163,9 @@ ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=1))
 plt.xticks(rotation=45)
 
 plt.tight_layout()
-plt.savefig(OUTPUT_DIR_STR + '/chart.png', dpi=150, bbox_inches='tight')
-print('Chart saved to outputs/chart.png')
+chart_filename = f'chart_{ticker}_{int(time.time())}.png'
+plt.savefig(OUTPUT_DIR_STR + '/' + chart_filename, dpi=150, bbox_inches='tight')
+print(f'Chart saved to outputs/{chart_filename}')
 """
         
         elif chart_type == "candlestick" and has_ohlc:
@@ -199,8 +201,9 @@ ax.xaxis.set_major_locator(mdates.MonthLocator(interval=1))
 plt.xticks(rotation=45)
 
 plt.tight_layout()
-plt.savefig(OUTPUT_DIR_STR + '/chart.png', dpi=150, bbox_inches='tight')
-print('Chart saved to outputs/chart.png')
+chart_filename = f'chart_{ticker}_{int(time.time())}.png'
+plt.savefig(OUTPUT_DIR_STR + '/' + chart_filename, dpi=150, bbox_inches='tight')
+print(f'Chart saved to outputs/{chart_filename}')
 """
         
         else:  # Default line chart
@@ -224,8 +227,9 @@ ax.xaxis.set_major_locator(mdates.MonthLocator(interval=1))
 plt.xticks(rotation=45)
 
 plt.tight_layout()
-plt.savefig(OUTPUT_DIR_STR + '/chart.png', dpi=150, bbox_inches='tight')
-print('Chart saved to outputs/chart.png')
+chart_filename = f'chart_{ticker}_{int(time.time())}.png'
+plt.savefig(OUTPUT_DIR_STR + '/' + chart_filename, dpi=150, bbox_inches='tight')
+print(f'Chart saved to outputs/{chart_filename}')
 """
     
     def run(self, query: str, sql_result: str = "") -> str:
@@ -264,11 +268,12 @@ print('Chart saved to outputs/chart.png')
             import matplotlib.pyplot as plt
             import numpy as np
 
-            local_vars = {"df": df, "OUTPUT_DIR_STR": OUTPUT_DIR_STR, "pd": pd}
+            local_vars = {"df": df, "OUTPUT_DIR_STR": OUTPUT_DIR_STR, "pd": pd, "ticker": ticker, "time": time}
             exec(chart_code, {"plt": plt, "mdates": mdates, "np": np, "pd": pd}, local_vars)
             
-            # Orchestrator expects a stable relative-ish path.
-            return "outputs/chart.png"
+            # Get the actual chart filename that was generated
+            chart_filename = local_vars.get("chart_filename", "chart.png")
+            return f"outputs/{chart_filename}"
             
         except Exception as e:
             return f"Error generating chart: {str(e)}"
@@ -286,7 +291,7 @@ def get_chart_agent() -> ChartAgent:
     return _chart_agent
 
 
-def run_chart(state: AgentState) -> AgentState:
+def run_chart(state: AgentState) -> Dict[str, Any]:
     """Generate a chart based on SQL query results.
     
     Required signature for orchestrator integration.
