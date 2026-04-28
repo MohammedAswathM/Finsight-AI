@@ -63,6 +63,21 @@ except Exception:  # noqa: BLE001
             "trace_log": append_trace("Sentiment agent: STUB (awaiting Member 4 PR)"),
         }
 
+try:
+    from agents.fraud_agent import run as fraud_run  # type: ignore
+except Exception:  # noqa: BLE001
+    def fraud_run(state: AgentState) -> Dict[str, Any]:
+        return {
+            "fraud_score": {
+                "fraud_probability": 0.0,
+                "is_fraud": False,
+                "risk_level": "LOW",
+                "confidence": 0.0,
+                "message": "Fraud agent: STUB (awaiting Member 1 PR)",
+            },
+            "trace_log": append_trace("Fraud agent: STUB (awaiting Member 1 PR)"),
+        }
+
 
 # ---------------------------------------------------------------------------
 # Forecast node — owned by Member 3. Uses predict_trend() wrapper.
@@ -148,6 +163,7 @@ def build_graph() -> StateGraph:
     graph.add_node("sql", sql_run)
     graph.add_node("chart", chart_run)
     graph.add_node("sentiment", sentiment_run)
+    graph.add_node("fraud", fraud_run)
     graph.add_node("forecast", forecast_node)
     graph.add_node("evaluator", evaluator_node)
     graph.add_node("retry_bump", increment_retry)
@@ -160,6 +176,7 @@ def build_graph() -> StateGraph:
     graph.add_edge("planner", "rag")
     graph.add_edge("planner", "sql")
     graph.add_edge("planner", "sentiment")
+    graph.add_edge("planner", "fraud")
     graph.add_edge("planner", "forecast")
 
     # SQL -> chart (chart depends on sql's output)

@@ -17,6 +17,9 @@ cp .env.example .env     # then edit GROQ_API_KEY
 # 4. Train the Member-3 forecaster (optional — graph runs without it)
 python -m models.train_forecaster
 
+# 4.5 Train the fraud detection model (optional until dataset is available)
+python -m models.train_fraud
+
 # 5. Smoke-test the orchestrator end-to-end (uses stubs for unmerged agents)
 python -m orchestrator.graph
 
@@ -28,8 +31,8 @@ python -m ui.app
 
 | Member | Branch             | Owns                                              |
 | ------ | ------------------ | ------------------------------------------------- |
-| 1      | `feature/rag`      | RAG agent, retrieval/, fraud model                |
-| 2      | `feature/sql-chart`| SQL/chart agents, data/, FinBERT fine-tune        |
+| 1      | `feature/fraud-model` | RAG agent, retrieval/, real fraud model training  |
+| 2      | `feature/sql-chart`   | SQL/chart agents, data/, FinBERT fine-tune        |
 | 3      | `feature/orchestrator` (this branch → `main`) | orchestrator/, forecaster, state contract |
 | 4      | `feature/ui-eval`  | Gradio UI, sentiment agent, RAGAS eval, MLOps report |
 
