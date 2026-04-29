@@ -5,6 +5,7 @@ Run:
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import time
 from pathlib import Path
@@ -61,14 +62,15 @@ async def on_message(message: cl.Message) -> None:
     await status.send()
 
     try:
-        result = run_graph(
-            {
-                "query": query,
-                "image_data": await _read_uploaded_image(message),
-                "retry_count": 0,
-                "trace_log": [],
-            }
-        )
+        graph_input = {
+            "query": query,
+            "image_data": await _read_uploaded_image(message),
+            "retry_count": 0,
+            "trace_log": [],
+        }
+        # run_graph is sync and can block for several seconds — offload to a thread
+        # so the Chainlit event loop stays responsive.
+        result = await asyncio.to_thread(run_graph, graph_input)
     except Exception as exc:  # noqa: BLE001
         await cl.Message(content=f"FinSight run failed: `{exc}`").send()
         return

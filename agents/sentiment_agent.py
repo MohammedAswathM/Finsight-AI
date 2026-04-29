@@ -6,6 +6,7 @@ with Member 2's local FinBERT wrapper. No OpenAI or GPT-4o dependency.
 from __future__ import annotations
 
 import re
+import socket
 import sys
 import time
 from collections import Counter
@@ -13,6 +14,10 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 import feedparser
+
+# Guard against Yahoo Finance RSS hangs — feedparser uses urllib under the hood
+# and respects the global default socket timeout.
+socket.setdefaulttimeout(10)
 
 if __package__ is None and str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))

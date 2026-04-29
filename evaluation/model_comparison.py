@@ -18,8 +18,11 @@ def _read_metrics(run_dir: Path) -> Dict[str, float]:
         return metrics
     for file in metrics_dir.iterdir():
         try:
+            # MLflow metric files: each line is "<timestamp_ms> <value> <step>".
+            # We want the value (index 1), not the step (index -1).
             line = file.read_text().strip().splitlines()[-1]
-            metrics[file.name] = float(line.split()[-1])
+            parts = line.split()
+            metrics[file.name] = float(parts[1] if len(parts) >= 2 else parts[0])
         except Exception:
             continue
     return metrics
