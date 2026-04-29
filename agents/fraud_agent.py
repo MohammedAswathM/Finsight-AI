@@ -61,11 +61,29 @@ def run(state: AgentState) -> Dict[str, Any]:
     """
     trace_prefix = "state transaction_features"
     transaction_features = state.get("transaction_features")
-    if not transaction_features:
-        transaction_features = _load_sample_transaction_features()
-        trace_prefix = "held-out creditcard.csv sample"
 
     try:
+        if not transaction_features:
+            if not DATA_PATH.exists():
+                return {
+                    "fraud_score": {
+                        "fraud_probability": 0.0,
+                        "is_fraud": False,
+                        "risk_level": "NOT_ASSESSED",
+                        "confidence": 0.0,
+                        "message": (
+                            "Fraud assessment skipped: no transaction_features in state "
+                            "and data/creditcard.csv is not available."
+                        ),
+                    },
+                    "fraud_label": "NOT_ASSESSED",
+                    "trace_log": [
+                        "Fraud agent: skipped (no transaction features or creditcard.csv)"
+                    ],
+                }
+            transaction_features = _load_sample_transaction_features()
+            trace_prefix = "held-out creditcard.csv sample"
+
         fraud_result = predict_fraud(transaction_features)
         fraud_label = "FRAUD" if fraud_result["is_fraud"] else "LEGIT"
         trace_msg = (
