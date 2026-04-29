@@ -57,7 +57,7 @@ mlflow
 ragas
 
 # --- UI (Member 4) ---
-gradio
+chainlit
 
 # --- News / Sentiment Agent (Member 4) ---
 feedparser
