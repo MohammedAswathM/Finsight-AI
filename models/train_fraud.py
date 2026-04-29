@@ -14,7 +14,7 @@ All models:
 - Include 2×2 confusion matrix
 - Feature importance via SHAP (tree models only)
 - Log all metrics to MLflow
-- Save best model (by AUC-PR) as fraud_detector.joblib
+- Save all final models plus best model (by AUC-PR) as fraud_detector.joblib
 
 Dataset Setup:
     Download the dataset and place it at: data/creditcard.csv
@@ -58,24 +58,35 @@ from imblearn.over_sampling import SMOTE
 # Try importing XGBoost and LightGBM with fallback
 xgboost_available = False
 lightgbm_available = False
+xgboost_import_error = None
+lightgbm_import_error = None
 
 try:
     from xgboost import XGBClassifier
     xgboost_available = True
-except ImportError:
-    print("⚠️  XGBoost not available. Install with: pip install xgboost")
+except Exception as exc:
+    xgboost_import_error = exc
+    print(f"⚠️  XGBoost not available: {exc}")
 
 try:
     from lightgbm import LGBMClassifier
     lightgbm_available = True
-except ImportError:
-    print("⚠️  LightGBM not available. Install with: pip install lightgbm")
+except Exception as exc:
+    lightgbm_import_error = exc
+    print(f"⚠️  LightGBM not available: {exc}")
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_PATH = ROOT / "data" / "creditcard.csv"
 MODEL_DIR = ROOT / "models"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 BEST_MODEL_PATH = MODEL_DIR / "fraud_detector.joblib"
+ALL_MODELS_PATH = MODEL_DIR / "fraud_models.joblib"
+MODEL_ARTIFACT_PATHS = {
+    "logistic_regression": MODEL_DIR / "fraud_model_logistic_regression.joblib",
+    "random_forest": MODEL_DIR / "fraud_model_random_forest.joblib",
+    "xgboost": MODEL_DIR / "fraud_model_xgboost.joblib",
+    "lightgbm": MODEL_DIR / "fraud_model_lightgbm.joblib",
+}
 REPORT_DIR = MODEL_DIR / "reports"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -219,7 +230,39 @@ def choose_best_model(results: dict) -> str:
     return sorted_models[0][0]
 
 
+def save_final_models(
+    trained_models: dict[str, object], results: dict[str, dict], best_name: str
+) -> None:
+    """Persist every trained final model and a bundle with thresholds/metrics."""
+    for name, model in trained_models.items():
+        model_path = MODEL_ARTIFACT_PATHS.get(name, MODEL_DIR / f"fraud_model_{name}.joblib")
+        joblib.dump(model, model_path)
+        print(f"   Saved {name} to {model_path}")
+
+    bundle = {
+        "best_model_name": best_name,
+        "models": trained_models,
+        "metrics": results,
+        "optimal_thresholds": {
+            name: metrics["optimal_threshold"] for name, metrics in results.items()
+        },
+    }
+    joblib.dump(bundle, ALL_MODELS_PATH)
+    print(f"   Saved all-model bundle to {ALL_MODELS_PATH}")
+
+
 def train_models() -> tuple[dict, pd.DataFrame, pd.Series]:
+    missing_models = []
+    if not xgboost_available:
+        missing_models.append(f"XGBoost ({xgboost_import_error})")
+    if not lightgbm_available:
+        missing_models.append(f"LightGBM ({lightgbm_import_error})")
+    if missing_models:
+        raise RuntimeError(
+            "Fraud training requires all four final models. Missing: "
+            + "; ".join(missing_models)
+        )
+
     df = load_data(DATA_PATH)
     if "Class" not in df.columns:
         raise ValueError("Expected target column 'Class' in the fraud dataset.")
@@ -250,26 +293,20 @@ def train_models() -> tuple[dict, pd.DataFrame, pd.Series]:
     )
 
     # 3. XGBoost (primary)
-    if xgboost_available:
-        models["xgboost"] = XGBClassifier(
-            use_label_encoder=False,
-            eval_metric="logloss",
-            n_jobs=min(8, multiprocessing.cpu_count()),
-            random_state=42,
-            verbosity=0,
-        )
-    else:
-        print("⚠️  Skipping XGBoost (not installed)")
+    models["xgboost"] = XGBClassifier(
+        use_label_encoder=False,
+        eval_metric="logloss",
+        n_jobs=min(8, multiprocessing.cpu_count()),
+        random_state=42,
+        verbosity=0,
+    )
 
     # 4. LightGBM (comparison)
-    if lightgbm_available:
-        models["lightgbm"] = LGBMClassifier(
-            n_jobs=min(8, multiprocessing.cpu_count()),
-            random_state=42,
-            verbose=-1,
-        )
-    else:
-        print("⚠️  Skipping LightGBM (not installed)")
+    models["lightgbm"] = LGBMClassifier(
+        n_jobs=min(8, multiprocessing.cpu_count()),
+        random_state=42,
+        verbose=-1,
+    )
 
     results: dict[str, dict] = {}
     trained_models: dict[str, object] = {}
@@ -329,6 +366,7 @@ def train_models() -> tuple[dict, pd.DataFrame, pd.Series]:
     best_name = choose_best_model(results)
     best_model = trained_models[best_name]
     joblib.dump(best_model, BEST_MODEL_PATH)
+    save_final_models(trained_models, results, best_name)
 
     print(f"\n✅ Best model: {best_name} (AUC-PR: {results[best_name]['auc_pr']:.4f})")
     print(f"   Saved to {BEST_MODEL_PATH}")
@@ -356,5 +394,5 @@ def print_summary(results: dict[str, dict]) -> None:
 if __name__ == "__main__":
     results, _, _ = train_models()
     print_summary(results)
-    print("\n✅ Training complete. The best model is saved as fraud_detector.joblib.")
+    print("\n✅ Training complete. All final models and the best model are saved.")
     print(f"   SHAP plots saved to {REPORT_DIR}/")

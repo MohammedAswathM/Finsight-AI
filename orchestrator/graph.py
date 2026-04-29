@@ -2,8 +2,8 @@
 
 Topology:
     planner -> {rag, sql, sentiment, forecast} (parallel fan-out)
-    sql     -> chart
-    {rag, chart, sentiment, forecast} -> evaluator
+    sql     -> {chart, fraud}
+    {rag, chart, fraud, sentiment, forecast} -> evaluator
     evaluator --conditional--> retry_bump -> planner   (loop)
                            \\-> synthesizer -> END
 
@@ -176,11 +176,11 @@ def build_graph() -> StateGraph:
     graph.add_edge("planner", "rag")
     graph.add_edge("planner", "sql")
     graph.add_edge("planner", "sentiment")
-    graph.add_edge("planner", "fraud")
     graph.add_edge("planner", "forecast")
 
-    # SQL -> chart (chart depends on sql's output)
+    # SQL -> chart and fraud. Fraud depends on SQL-populated transaction_features.
     graph.add_edge("sql", "chart")
+    graph.add_edge("sql", "fraud")
 
     # Converge at evaluator.
     graph.add_edge("rag", "evaluator")

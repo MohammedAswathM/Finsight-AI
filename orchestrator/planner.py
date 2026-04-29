@@ -9,7 +9,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from agents.base_agent import append_trace, get_llm, strip_code_fence
 from state import AgentState
 
-VALID_AGENTS = {"rag", "sql", "chart", "sentiment", "forecast"}
+VALID_AGENTS = {"rag", "sql", "chart", "sentiment", "fraud", "forecast"}
 
 PLANNER_PROMPT = ChatPromptTemplate.from_messages(
     [
@@ -21,7 +21,7 @@ research agents are needed. Respond with a JSON object ONLY — no prose, no cod
 Schema:
 {{
   "plan": ["short step 1", "short step 2", ...],
-  "agents_to_call": ["rag", "sql", "chart", "sentiment", "forecast"]
+  "agents_to_call": ["rag", "sql", "chart", "sentiment", "fraud", "forecast"]
 }}
 
 Rules for agents_to_call:
@@ -29,8 +29,9 @@ Rules for agents_to_call:
 - "sql"       -> stock prices, volume, historical OHLCV, trends over a period
 - "chart"     -> any visual/trend request (always pair with "sql")
 - "sentiment" -> news, market mood, analyst opinion, headlines
+- "fraud"     -> transaction fraud, payment risk, suspicious card activity (pair with "sql")
 - "forecast"  -> outlook, prediction, future price direction
-- For broad/comprehensive questions, include ALL five agents.
+- For broad/comprehensive questions, include ALL six agents.
 - Always include at least one agent.""",
         ),
         ("human", "User query: {query}"),
@@ -51,7 +52,7 @@ def planner_node(state: AgentState) -> Dict[str, Any]:
             agents = ["rag", "sql", "chart", "sentiment", "forecast"]
     except Exception as exc:  # LLM/JSON failure — safe fallback: call everyone
         plan = ["Fallback: run all agents"]
-        agents = ["rag", "sql", "chart", "sentiment", "forecast"]
+        agents = ["rag", "sql", "chart", "sentiment", "fraud", "forecast"]
         return {
             "plan": plan,
             "agents_to_call": agents,

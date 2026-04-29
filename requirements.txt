@@ -4,7 +4,7 @@
 # =============================================================================
 
 # --- Core Agentic Framework ---
-langchain>=0.2.0
+langchain>=0.2.0,<0.3.0
 langchain-community>=0.2.0
 langchain-core>=0.2.0
 langchain-groq>=0.1.5
@@ -24,6 +24,11 @@ pandas-ta
 SQLAlchemy
 matplotlib
 
+# --- Scientific stack (pin for Windows binary compatibility) ---
+# SciPy wheels currently require NumPy < 2.3; pin avoids sklearn/transformers import crashes.
+numpy<2.3.0
+scipy<1.14.0
+
 # --- ML Models (AIML Infra) ---
 # Fraud detection (Member 1)
 xgboost
@@ -34,8 +39,15 @@ shap
 # FinBERT sentiment (Member 2)
 transformers
 torch
-datasets
+datasets==2.19.2
 accelerate
+
+# --- HF stack pins (avoid breaking transformers + mlflow on Windows) ---
+huggingface-hub<1.0.0
+pyarrow<24
+
+# --- pandas pin (mlflow + many deps currently assume pandas<3) ---
+pandas<3
 # Forecaster (Member 3) uses lightgbm above
 
 # --- MLOps ---
@@ -49,6 +61,11 @@ gradio
 
 # --- News / Sentiment Agent (Member 4) ---
 feedparser
+
+# --- Additional requirements for local ingestion and HTML parsing ---
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
 
 # --- Environment & Utilities ---
 python-dotenv

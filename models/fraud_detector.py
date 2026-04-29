@@ -2,7 +2,8 @@
 Fraud detector inference wrapper.
 
 Loads the best trained fraud model and exposes a single predict_fraud()
-function for use by downstream agents.
+function for use by downstream agents. If the all-model bundle exists, the
+saved optimal threshold for the best model is used at inference time.
 """
 
 from __future__ import annotations
@@ -17,12 +18,21 @@ MODEL_PATHS = [
     ROOT / "models" / "fraud_detector.joblib",
     ROOT / "models" / "fraud_detector.pkl",
 ]
+ALL_MODELS_PATH = ROOT / "models" / "fraud_models.joblib"
+DEFAULT_THRESHOLD = 0.5
 
 
 def _load_model():
+    if ALL_MODELS_PATH.exists():
+        bundle = joblib.load(ALL_MODELS_PATH)
+        best_name = bundle["best_model_name"]
+        model = bundle["models"][best_name]
+        threshold = bundle.get("optimal_thresholds", {}).get(best_name, DEFAULT_THRESHOLD)
+        return model, float(threshold), best_name
+
     for path in MODEL_PATHS:
         if path.exists():
-            return joblib.load(path)
+            return joblib.load(path), DEFAULT_THRESHOLD, path.stem
     raise FileNotFoundError(
         "No trained fraud model found. "
         "Run `python models/train_fraud.py` after placing creditcard.csv in finsight-ai/data/."
@@ -68,10 +78,10 @@ def predict_fraud(transaction_features: Dict[str, float]) -> Dict[str, object]:
     Returns:
         dict with fraud_probability, is_fraud, risk_level, confidence, features, and message.
     """
-    model = _load_model()
+    model, threshold, model_name = _load_model()
     X = _build_feature_vector(transaction_features)
     proba = model.predict_proba(X)[0, 1]
-    pred = bool(proba >= 0.5)
+    pred = bool(proba >= threshold)
     risk_level = _format_risk_level(proba)
     confidence = float(proba if pred else 1 - proba)
 
@@ -80,6 +90,8 @@ def predict_fraud(transaction_features: Dict[str, float]) -> Dict[str, object]:
         "is_fraud": pred,
         "risk_level": risk_level,
         "confidence": round(confidence, 4),
+        "model_name": model_name,
+        "threshold": round(threshold, 4),
         "features": list(transaction_features.keys()),
         "message": (
             "Fraud model prediction completed. "

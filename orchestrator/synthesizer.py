@@ -16,22 +16,22 @@ SYNTHESIZER_PROMPT = ChatPromptTemplate.from_messages(
 data into a clear, structured markdown report using EXACTLY these sections (omit a \
 section only if its data is truly missing):
 
-## 📄 Filing Analysis
+## Filing Analysis
 [Summarise key facts from RAG. Cite sources inline as [source].]
 
-## 📈 Price & Market Data
+## Price & Market Data
 [Key price statistics and trends from SQL output.]
 
-## 🔍 Fraud Risk Assessment
+## Fraud Risk Assessment
 [Include ONLY if fraud_score is present and not None.]
 
-## 📰 News Sentiment
+## News Sentiment
 [Overall sentiment + 1–2 key themes.]
 
-## 🔮 20-Day Outlook
+## 20-Day Outlook
 [Two ML-model outputs: direction (UP/DOWN/FLAT with confidence) and volatility regime (HIGH/LOW with confidence). Present both clearly.]
 
-## ✅ Summary
+## Summary
 [2–3 sentence synthesis tying everything together.]
 
 Rules:

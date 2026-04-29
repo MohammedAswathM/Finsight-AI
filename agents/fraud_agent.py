@@ -24,6 +24,31 @@ from models.fraud_detector import predict_fraud  # noqa: E402
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 
+DATA_PATH = PROJECT_ROOT / "data" / "creditcard.csv"
+
+
+def _load_sample_transaction_features() -> Dict[str, float]:
+    """Load one deterministic sample from the held-out fraud test split."""
+    import pandas as pd
+    from sklearn.model_selection import train_test_split
+
+    if not DATA_PATH.exists():
+        raise FileNotFoundError(
+            f"Fraud dataset not found at {DATA_PATH}. "
+            "Provide state['transaction_features'] or add data/creditcard.csv."
+        )
+
+    df = pd.read_csv(DATA_PATH)
+    if "Class" not in df.columns:
+        raise ValueError("Expected target column 'Class' in data/creditcard.csv.")
+
+    X = df.drop(columns=["Class"])
+    y = df["Class"]
+    _, X_test, _, _ = train_test_split(
+        X, y, test_size=0.2, stratify=y, random_state=42
+    )
+    return {key: float(value) for key, value in X_test.iloc[0].to_dict().items()}
+
 
 def run(state: AgentState) -> Dict[str, Any]:
     """
@@ -34,30 +59,18 @@ def run(state: AgentState) -> Dict[str, Any]:
     Returns:
       - Delta dict with fraud_score and trace_log (does not mutate input state)
     """
+    trace_prefix = "state transaction_features"
     transaction_features = state.get("transaction_features")
     if not transaction_features:
-        message = (
-            "Fraud agent skipped: no transaction_features provided. "
-            "Provide Kaggle credit card fraud features in state['transaction_features']."
-        )
-        return {
-            "fraud_score": {
-                "fraud_probability": 0.0,
-                "is_fraud": False,
-                "risk_level": "LOW",
-                "confidence": 0.0,
-                "message": message,
-            },
-            "fraud_label": "LEGIT",
-            "trace_log": ["Fraud agent: no transaction_features provided"],
-        }
+        transaction_features = _load_sample_transaction_features()
+        trace_prefix = "held-out creditcard.csv sample"
 
     try:
         fraud_result = predict_fraud(transaction_features)
         fraud_label = "FRAUD" if fraud_result["is_fraud"] else "LEGIT"
         trace_msg = (
             f"Fraud agent: fraud_probability={fraud_result['fraud_probability']:.4f} "
-            f"risk_level={fraud_result['risk_level']}"
+            f"risk_level={fraud_result['risk_level']} source={trace_prefix}"
         )
         logger.info("Fraud agent produced risk=%s prob=%.4f", fraud_result["risk_level"], fraud_result["fraud_probability"])
         return {
