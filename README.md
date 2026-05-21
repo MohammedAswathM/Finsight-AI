@@ -84,12 +84,13 @@ mlflow ui --backend-store-uri file:./mlruns
 
 Best-tested queries for the demo:
 
-- `Analyze Microsoft 10-K cloud revenue and recent sentiment` — full agent fan-out
+- `Analyze Apple 2024 10-K revenue, price trend, sentiment, and outlook` — full agent fan-out
+- `Analyze Microsoft 10-K cloud revenue and recent sentiment` — filing + sentiment query
 - `Show AAPL closing price trend and explain the outlook` — SQL + chart + forecaster
 - `Summarize Amazon's risk factors from filings` — RAG-heavy, returns real legal-risk content
 - `Compare Microsoft and Nvidia Q4 results` — multi-ticker, often triggers the reflection retry loop
 
-Avoid Apple-10K-specific questions; the AAPL filing returned 404 from SEC EDGAR during ingest, so RAG has 4 of 5 companies indexed.
+Indexed filing coverage: Apple 2024 plus Microsoft, Amazon, Alphabet, and Meta 2023 10-K filings.
 
 ## Team
 
@@ -104,9 +105,8 @@ The orchestrator is the only branch that merges to `main`. See `FINSIGHT_AI_BRAI
 
 ## Known limitations
 
-- **Apple 10-K**: SEC EDGAR returned 404 for the linked accession during ingest. RAG correctly reports "no relevant info" for Apple-filing-specific queries rather than hallucinating.
 - **Forecaster default ticker**: when the planner can't extract a ticker from the query, the forecaster defaults to AAPL. Reports for non-AAPL questions will note "data not available for X, but here's AAPL's forecast."
-- **Free Groq daily quota**: ~100K tokens/day, ~14K requests/day. A heavy session of UI queries + RAGAS can exhaust this; quota resets at 00:00 UTC.
+- **Free Groq daily quota**: a heavy session of UI queries + RAGAS can exhaust this. Configure `GROQ_API_KEYS` or `GROQ_API_KEY_2`/`GROQ_API_KEY_3` for rate-limit failover.
 - **Trace duplicates**: the LangGraph join node fires once per super-step that has new inputs, so the trace can show two `Synthesizer: done` lines. The final state is correct.
 
 ## License

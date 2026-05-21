@@ -36,6 +36,8 @@ outputs/*
 
 # Private decisions / lessons log — local reference only, do not commit.
 decisions/
+FINSIGHT_AI_BRAIN.md
+REPORT_EVIDENCE.md
 
 # Python Cache
 __pycache__/

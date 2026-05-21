@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from agents.base_agent import append_trace, get_llm, safe_get, strip_code_fence
+from agents.base_agent import append_trace, invoke_prompt_with_fallback, safe_get, strip_code_fence
 from state import AgentState
 
 PASS_THRESHOLD = 0.7
@@ -62,11 +62,9 @@ Evaluate the combined output.""",
 
 
 def evaluator_node(state: AgentState) -> Dict[str, Any]:
-    llm = get_llm()
-    chain = EVALUATOR_PROMPT | llm
-
     try:
-        response = chain.invoke(
+        response = invoke_prompt_with_fallback(
+            EVALUATOR_PROMPT,
             {
                 "query": state["query"],
                 "rag_result": safe_get(state, "rag_result", "NOT RETRIEVED"),
@@ -75,7 +73,7 @@ def evaluator_node(state: AgentState) -> Dict[str, Any]:
                 "forecast": safe_get(state, "forecast", "NOT COMPUTED"),
                 "fraud_score": safe_get(state, "fraud_score", "NOT COMPUTED"),
                 "sources": safe_get(state, "sources", "[]"),
-            }
+            },
         )
         parsed = json.loads(strip_code_fence(response.content))
         score = float(parsed.get("score", 0.5))

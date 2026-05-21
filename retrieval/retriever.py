@@ -23,6 +23,7 @@ Public API
 """
 
 import logging
+import os
 from typing import List, Optional
 
 from langchain.schema import Document, BaseRetriever
@@ -49,14 +50,15 @@ def _get_compression_llm():
     try:
         from langchain_groq import ChatGroq
 
-        from config import GROQ_API_KEY, GROQ_MODEL
+        from config import GROQ_MODEL, get_groq_keys
 
-        if not GROQ_API_KEY:
+        keys = get_groq_keys()
+        if not keys:
             logger.warning("GROQ_API_KEY not set — compression disabled.")
             return None
 
         logger.info("Using Groq ChatGroq (%s) for compression.", GROQ_MODEL)
-        return ChatGroq(model=GROQ_MODEL, temperature=0, api_key=GROQ_API_KEY)
+        return ChatGroq(model=GROQ_MODEL, temperature=0, api_key=keys[0])
     except Exception as exc:
         logger.warning("Could not load Groq compression model: %s. Compression disabled.", exc)
         return None
@@ -94,6 +96,10 @@ def build_retriever(
     parent_retriever, _ = build_parent_document_retriever(vectorstore, docstore)
     parent_retriever.search_kwargs = {"k": k}
     logger.info("ParentDocumentRetriever built (k=%d).", k)
+
+    env_flag = os.getenv("RAG_USE_COMPRESSION", "1").strip().lower()
+    if env_flag in {"0", "false", "no", "off"}:
+        use_compression = False
 
     if not use_compression:
         return parent_retriever

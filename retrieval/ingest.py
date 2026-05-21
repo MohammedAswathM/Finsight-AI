@@ -39,34 +39,13 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 BASE_DIR  = Path(__file__).resolve().parent.parent
 PDF_DIR   = BASE_DIR / "data" / "pdfs"
 
-# ── SEC EDGAR direct links for 5 recent 10-K filings ──────────────────────
-# Apple, Microsoft, Amazon, Alphabet, Meta — all filed 2024
-SEC_10K_URLS: List[dict] = [
-    {
-        "company": "Apple_Inc",
-        "url": (
-            "https://www.sec.gov/Archives/edgar/data/320193/000032019323000106/"
-            "aapl20230930.htm"
-        ),
-        # Fallback: use a freely available EDGAR full-text search result
-        "pdf_fallback": None,
-    },
-]
-
-# Better approach: use EDGAR full-text search API to get actual PDF accessions
-EDGAR_SEARCH_URL = (
-    "https://efts.sec.gov/LATEST/search-index"
-    "?q=%2210-K%22&dateRange=custom&startdt=2024-01-01"
-    "&forms=10-K&_source=filing_index"
-)
-
-# Curated direct PDF URLs from SEC EDGAR (verified accessible, no auth needed)
+# Curated direct 10-K URLs from SEC EDGAR (verified accessible, no auth needed).
 FILINGS: List[dict] = [
     {
-        "company": "Apple_2023",
+        "company": "Apple_2024",
         "url": (
             "https://www.sec.gov/Archives/edgar/data/320193/"
-            "000032019323000106/aapl20230930.htm"
+            "000032019324000123/aapl-20240928.htm"
         ),
     },
     {

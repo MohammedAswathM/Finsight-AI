@@ -5,7 +5,7 @@ from typing import Any, Dict
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from agents.base_agent import append_trace, get_llm, safe_get
+from agents.base_agent import append_trace, invoke_prompt_with_fallback, safe_get
 from state import AgentState
 
 SYNTHESIZER_PROMPT = ChatPromptTemplate.from_messages(
@@ -55,11 +55,9 @@ Forecast: {forecast}""",
 
 
 def synthesizer_node(state: AgentState) -> Dict[str, Any]:
-    llm = get_llm(temperature=0.2)
-    chain = SYNTHESIZER_PROMPT | llm
-
     try:
-        response = chain.invoke(
+        response = invoke_prompt_with_fallback(
+            SYNTHESIZER_PROMPT,
             {
                 "query": state["query"],
                 "rag_result": safe_get(state, "rag_result", "No filing data retrieved."),
@@ -68,7 +66,8 @@ def synthesizer_node(state: AgentState) -> Dict[str, Any]:
                 "fraud_score": safe_get(state, "fraud_score", "Not assessed"),
                 "sentiment_result": safe_get(state, "sentiment_result", "No sentiment data."),
                 "forecast": safe_get(state, "forecast", "No forecast available."),
-            }
+            },
+            temperature=0.2,
         )
         report = response.content
     except Exception as exc:

@@ -76,7 +76,14 @@ def _macd(series: pd.Series) -> tuple[pd.Series, pd.Series, pd.Series]:
 
 
 def _download(ticker: str, period: str) -> pd.DataFrame:
-    df = yf.download(ticker, period=period, auto_adjust=True, progress=False)
+    df = yf.download(
+        ticker,
+        period=period,
+        auto_adjust=True,
+        progress=False,
+        threads=False,
+        timeout=10,
+    )
     if df.empty:
         raise ValueError(f"No yfinance data for ticker={ticker}")
     if isinstance(df.columns, pd.MultiIndex):

@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 from langchain_core.prompts import ChatPromptTemplate
 
-from agents.base_agent import append_trace, get_llm, strip_code_fence
+from agents.base_agent import append_trace, invoke_prompt_with_fallback, strip_code_fence
 from state import AgentState
 
 VALID_AGENTS = {"rag", "sql", "chart", "sentiment", "fraud", "forecast"}
@@ -40,11 +40,8 @@ Rules for agents_to_call:
 
 
 def planner_node(state: AgentState) -> Dict[str, Any]:
-    llm = get_llm()
-    chain = PLANNER_PROMPT | llm
-
     try:
-        response = chain.invoke({"query": state["query"]})
+        response = invoke_prompt_with_fallback(PLANNER_PROMPT, {"query": state["query"]})
         parsed = json.loads(strip_code_fence(response.content))
         plan = parsed.get("plan") or ["Research the query."]
         agents = [a for a in parsed.get("agents_to_call", []) if a in VALID_AGENTS]

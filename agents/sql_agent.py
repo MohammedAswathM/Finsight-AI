@@ -8,6 +8,7 @@ Owned by Member 2 (feature/sql-chart branch).
 from __future__ import annotations
 
 import sys
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -18,7 +19,7 @@ import pandas as pd
 if __package__ is None and str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from agents.base_agent import append_trace, get_llm, strip_code_fence
+from agents.base_agent import append_trace, invoke_text_with_fallback, strip_code_fence
 from state import AgentState
 
 # Database path
@@ -74,8 +75,6 @@ class SQLAgent:
             db_path: Path to SQLite database
         """
         self.db_path = db_path
-        self.llm = get_llm(temperature=0.1)
-        
         if db_path.exists():
             # Keep a connection path only; execution is via sqlite3 for reliability.
             pass
@@ -84,6 +83,34 @@ class SQLAgent:
         
         # Get available tickers for context
         self.available_tickers = self._get_tickers()
+
+    def _extract_ticker(self, query: str) -> str:
+        company_map = {
+            "apple": "AAPL",
+            "microsoft": "MSFT",
+            "google": "GOOGL",
+            "alphabet": "GOOGL",
+            "amazon": "AMZN",
+            "nvidia": "NVDA",
+            "meta": "META",
+            "tesla": "TSLA",
+            "jpmorgan": "JPM",
+            "visa": "V",
+            "johnson": "JNJ",
+        }
+        lowered = query.lower()
+        for name, ticker in company_map.items():
+            if name in lowered and ticker in self.available_tickers:
+                return ticker
+
+        for token in re.findall(r"\b[A-Z]{2,5}\b", query.upper()):
+            if token in self.available_tickers:
+                return token
+        return "AAPL"
+
+    def _looks_like_price_query(self, query: str) -> bool:
+        lowered = query.lower()
+        return any(word in lowered for word in ("price", "trend", "stock", "close", "closing", "volume", "market"))
     
     def _get_tickers(self) -> list[str]:
         """Get list of available tickers from database."""
@@ -129,7 +156,7 @@ SQL Query:"""
         try:
             # Generate SQL from natural language
             prompt = self._build_prompt(query)
-            response = self.llm.invoke(prompt)
+            response = invoke_text_with_fallback(prompt, temperature=0.1)
             sql_query = strip_code_fence(getattr(response, "content", str(response))).strip()
 
             # Some models return `sql\nSELECT ...` after fence stripping.
@@ -142,6 +169,8 @@ SQL Query:"""
             conn.close()
             
             if df.empty:
+                if self._looks_like_price_query(query):
+                    return self._price_summary_fallback(query)
                 return "No data found for the given query."
             
             # Format the result
@@ -149,7 +178,56 @@ SQL Query:"""
             return result
             
         except Exception as e:
+            if self._looks_like_price_query(query):
+                try:
+                    return self._price_summary_fallback(query)
+                except Exception:
+                    pass
             return f"Error executing query: {str(e)}"
+
+    def _price_summary_fallback(self, query: str) -> str:
+        """Deterministic fallback for broad mixed queries that mention price trends."""
+        ticker = self._extract_ticker(query)
+        sql = """
+            SELECT date, open, high, low, close, volume
+            FROM prices
+            WHERE ticker = ?
+              AND date >= (
+                  SELECT date(max(date), '-180 day')
+                  FROM prices
+                  WHERE ticker = ?
+              )
+            ORDER BY date ASC
+        """
+        conn = sqlite3.connect(self.db_path)
+        df = pd.read_sql_query(sql, conn, params=(ticker, ticker))
+        conn.close()
+
+        if df.empty:
+            return f"No price data found for {ticker}."
+
+        first = df.iloc[0]
+        last = df.iloc[-1]
+        change = float(last["close"] - first["close"])
+        change_pct = float((change / first["close"]) * 100) if first["close"] else 0.0
+        high = float(df["high"].max())
+        low = float(df["low"].min())
+        avg_volume = float(df["volume"].mean())
+        direction = "up" if change > 0 else "down" if change < 0 else "flat"
+
+        result_lines = [
+            f"Deterministic Price Summary ({ticker}, {len(df)} rows)",
+            "=" * 40,
+            "SQL fallback: last 180 calendar days from latest available price date",
+            f"Date range: {first['date']} to {last['date']}",
+            f"Close moved {direction}: ${first['close']:.2f} -> ${last['close']:.2f} "
+            f"({change:+.2f}, {change_pct:+.2f}%)",
+            f"Period high/low: ${high:.2f} / ${low:.2f}",
+            f"Average volume: {avg_volume:,.0f}",
+            "",
+            df.tail(10).to_string(index=False),
+        ]
+        return "\n".join(result_lines)
     
     def _format_result(self, df: pd.DataFrame, sql: str) -> str:
         """Format the query result for display."""
@@ -187,7 +265,7 @@ SQL Query:"""
         """
         try:
             prompt = self._build_prompt(query)
-            response = self.llm.invoke(prompt)
+            response = invoke_text_with_fallback(prompt, temperature=0.1)
             sql_query = strip_code_fence(getattr(response, "content", str(response))).strip()
             if sql_query.lower().startswith("sql"):
                 sql_query = sql_query[3:].lstrip()

@@ -2,7 +2,7 @@
 
 Ask a financial research question such as:
 
-- Analyze Apple's latest filing, price trend, sentiment, and forecast.
+- Analyze Apple 2024 10-K revenue, price trend, sentiment, and outlook.
 - What is the current news sentiment around Nvidia?
 - Show AAPL closing prices and summarize the outlook.
 
