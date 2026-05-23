@@ -11,7 +11,7 @@ import sys
 import time
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional
 
 import feedparser
 
@@ -46,12 +46,15 @@ _TICKER_ALIASES = {
     "NETFLIX": "NFLX",
     "JPM": "JPM",
     "JPMORGAN": "JPM",
+    "VISA": "V",
+    "JNJ": "JNJ",
+    "JOHNSON": "JNJ",
 }
 
 _STOPWORDS = {"THE", "AND", "FOR", "WITH", "FROM", "SHOW", "WHAT", "NEWS", "PRICE"}
 
 
-def extract_ticker(query: str) -> str:
+def extract_ticker(query: str) -> Optional[str]:
     """Infer a ticker from a user query."""
     text = (query or "").upper()
     for alias, ticker in _TICKER_ALIASES.items():
@@ -59,14 +62,16 @@ def extract_ticker(query: str) -> str:
             return ticker
 
     for token in re.findall(r"\b[A-Z]{2,5}\b", text):
-        if token not in _STOPWORDS:
+        if token in set(_TICKER_ALIASES.values()) and token not in _STOPWORDS:
             return token
-    return "AAPL"
+    return None
 
 
 def fetch_headlines(query: str, limit: int = 10) -> List[str]:
     """Fetch recent finance headlines using Yahoo Finance RSS."""
     ticker = extract_ticker(query)
+    if not ticker:
+        return []
     url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US"
     feed = feedparser.parse(url)
 
@@ -129,6 +134,16 @@ def run(state: AgentState) -> Dict[str, Any]:
     try:
         query = state.get("query", "")
         ticker = extract_ticker(query)
+        if not ticker:
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            return {
+                "sentiment_result": (
+                    "Data not available. No supported ticker was found for sentiment analysis."
+                ),
+                "trace_log": append_trace(
+                    f"Sentiment agent: skipped unsupported or missing ticker in {elapsed_ms:.0f} ms"
+                ),
+            }
         headlines = fetch_headlines(query)
         if not headlines:
             headlines = [f"No recent Yahoo Finance headlines found for {ticker}."]

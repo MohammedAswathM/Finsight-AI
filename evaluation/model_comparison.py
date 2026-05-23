@@ -36,7 +36,62 @@ def collect_mlflow_metrics() -> pd.DataFrame:
         for run_dir in root.glob("*/*"):
             metrics = _read_metrics(run_dir)
             if metrics:
-                rows.append({"run_path": str(run_dir), **metrics})
+                rows.append(
+                    {
+                        "experiment": _experiment_name(run_dir.parent),
+                        "run_id": run_dir.name,
+                        "run_path": str(run_dir),
+                        **metrics,
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def _experiment_name(experiment_dir: Path) -> str:
+    meta = experiment_dir / "meta.yaml"
+    if not meta.exists():
+        return experiment_dir.name
+    for line in meta.read_text(errors="ignore").splitlines():
+        if line.startswith("name:"):
+            return line.split(":", 1)[1].strip().strip("'\"")
+    return experiment_dir.name
+
+
+def _compact_metrics(metrics: pd.DataFrame) -> pd.DataFrame:
+    """Return one readable best-run row per MLflow experiment."""
+    if metrics.empty:
+        return metrics
+
+    priority = [
+        "finetuned_f1_macro",
+        "test_f1_macro",
+        "directional_accuracy",
+        "cv_roc_auc_mean",
+        "base_f1_macro",
+    ]
+    rows = []
+    for experiment, group in metrics.groupby("experiment", dropna=False):
+        score_col = next((col for col in priority if col in group and group[col].notna().any()), None)
+        if score_col:
+            best = group.loc[group[score_col].astype(float).idxmax()].copy()
+        else:
+            best = group.iloc[-1].copy()
+
+        row = {
+            "experiment": experiment,
+            "best_metric": score_col or "n/a",
+            "score": best.get(score_col) if score_col else None,
+            "run_id": best.get("run_id", ""),
+        }
+        metric_parts = []
+        for col in group.columns:
+            if col in {"experiment", "run_id", "run_path"}:
+                continue
+            value = best.get(col)
+            if pd.notna(value):
+                metric_parts.append(f"{col}={value:.4f}")
+        row["metrics"] = "; ".join(metric_parts)
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
@@ -75,8 +130,9 @@ def wrapper_examples() -> pd.DataFrame:
 
 def main() -> None:
     metrics = collect_mlflow_metrics()
-    print("\n=== MLflow Metrics ===")
-    print(metrics.to_string(index=False) if not metrics.empty else "No local MLflow metrics found.")
+    print("\n=== MLflow Best-Run Summary ===")
+    compact = _compact_metrics(metrics)
+    print(compact.to_string(index=False) if not compact.empty else "No local MLflow metrics found.")
     print("\n=== Wrapper Examples ===")
     print(wrapper_examples().to_string(index=False))
 

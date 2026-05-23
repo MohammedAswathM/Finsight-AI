@@ -13,8 +13,9 @@ documents where a single sentence often needs its surrounding paragraph.
 
 Usage
 -----
-    python -m retrieval.ingest              # download + ingest all 10-Ks
+    python -m retrieval.ingest              # download + ingest all 10-Ks if empty
     python -m retrieval.ingest --reset      # wipe DB first, then ingest
+    python -m retrieval.ingest --force      # append even if the collection is not empty
 """
 
 import os
@@ -22,6 +23,7 @@ import sys
 import logging
 import argparse
 import requests
+import warnings
 from pathlib import Path
 from typing import List
 
@@ -31,6 +33,13 @@ from langchain.storage import LocalFileStore, create_kv_docstore
 from langchain.retrievers import ParentDocumentRetriever
 
 from retrieval.vectorstore import get_vectorstore, get_embeddings
+
+try:
+    from bs4 import XMLParsedAsHTMLWarning
+
+    warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+except Exception:
+    pass
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
@@ -135,7 +144,7 @@ def load_documents(file_paths: List[Path]):
         try:
             suffix = fp.suffix.lower()
             if suffix in {".htm", ".html"}:
-                loader = BSHTMLLoader(str(fp), open_encoding="utf-8")
+                loader = BSHTMLLoader(str(fp), open_encoding="utf-8", bs_kwargs={"features": "lxml"})
             elif suffix == ".pdf":
                 loader = PyPDFLoader(str(fp))
             else:
@@ -187,7 +196,7 @@ def build_parent_document_retriever(vectorstore, docstore=None):
     return retriever, docstore
 
 
-def ingest(reset: bool = False) -> tuple:
+def ingest(reset: bool = False, force: bool = False) -> tuple:
     """
     Full ingestion pipeline:
       1. Download 10-K filings
@@ -197,6 +206,20 @@ def ingest(reset: bool = False) -> tuple:
       5. Return (retriever, docstore)
     """
     vectorstore = get_vectorstore(reset=reset)
+    try:
+        existing_count = vectorstore._collection.count()
+    except Exception:
+        existing_count = 0
+
+    if existing_count and not reset and not force:
+        logger.info(
+            "Vector store already contains %d chunks; skipping ingestion. "
+            "Use --reset to rebuild or --force to append.",
+            existing_count,
+        )
+        retriever, docstore = build_parent_document_retriever(vectorstore)
+        return retriever, docstore
+
     file_paths  = download_filings()
 
     if not file_paths:
@@ -225,5 +248,6 @@ def ingest(reset: bool = False) -> tuple:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Ingest SEC 10-K filings into ChromaDB")
     parser.add_argument("--reset", action="store_true", help="Wipe the DB before ingesting")
+    parser.add_argument("--force", action="store_true", help="Append documents even if the DB is not empty")
     args = parser.parse_args()
-    ingest(reset=args.reset)
+    ingest(reset=args.reset, force=args.force)

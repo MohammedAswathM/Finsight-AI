@@ -13,7 +13,11 @@ Usage
 
 import os
 import logging
+import warnings
 from pathlib import Path
+
+warnings.filterwarnings("ignore", message=".*HuggingFaceEmbeddings.*deprecated.*")
+warnings.filterwarnings("ignore", message=".*Chroma.*deprecated.*")
 
 import chromadb
 from langchain_community.embeddings import HuggingFaceEmbeddings

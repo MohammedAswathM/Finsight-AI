@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, List
 import joblib
 import numpy as np
+import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
 MODEL_PATHS = [
@@ -39,12 +40,16 @@ def _load_model():
     )
 
 
-def _build_feature_vector(transaction_features: Dict[str, float]) -> np.ndarray:
-    feature_order = [
+def _feature_order() -> List[str]:
+    return [
         "Time",
         *[f"V{i}" for i in range(1, 29)],
         "Amount",
     ]
+
+
+def _build_feature_vector(transaction_features: Dict[str, float]) -> pd.DataFrame:
+    feature_order = _feature_order()
 
     missing = [f for f in feature_order if f not in transaction_features]
     if missing:
@@ -54,7 +59,7 @@ def _build_feature_vector(transaction_features: Dict[str, float]) -> np.ndarray:
         )
 
     values = [float(transaction_features[name]) for name in feature_order]
-    return np.array(values).reshape(1, -1)
+    return pd.DataFrame([values], columns=feature_order)
 
 
 def _format_risk_level(probability: float) -> str:

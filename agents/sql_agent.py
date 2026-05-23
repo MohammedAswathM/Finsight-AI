@@ -84,7 +84,7 @@ class SQLAgent:
         # Get available tickers for context
         self.available_tickers = self._get_tickers()
 
-    def _extract_ticker(self, query: str) -> str:
+    def _extract_ticker(self, query: str) -> Optional[str]:
         company_map = {
             "apple": "AAPL",
             "microsoft": "MSFT",
@@ -106,7 +106,7 @@ class SQLAgent:
         for token in re.findall(r"\b[A-Z]{2,5}\b", query.upper()):
             if token in self.available_tickers:
                 return token
-        return "AAPL"
+        return None
 
     def _looks_like_price_query(self, query: str) -> bool:
         lowered = query.lower()
@@ -188,6 +188,11 @@ SQL Query:"""
     def _price_summary_fallback(self, query: str) -> str:
         """Deterministic fallback for broad mixed queries that mention price trends."""
         ticker = self._extract_ticker(query)
+        if not ticker:
+            return (
+                "No supported ticker found for price data. Available tickers: "
+                f"{', '.join(self.available_tickers)}."
+            )
         sql = """
             SELECT date, open, high, low, close, volume
             FROM prices

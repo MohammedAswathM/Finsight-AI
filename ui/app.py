@@ -6,7 +6,6 @@ Run:
 from __future__ import annotations
 
 import asyncio
-import base64
 import sys
 import time
 from pathlib import Path
@@ -23,24 +22,14 @@ from orchestrator.graph import run_graph
 from ui.trace_panel import format_trace
 
 
-async def _read_uploaded_image(message: cl.Message) -> str | None:
-    """Read the first uploaded image as base64 for the graph state."""
-    for element in message.elements or []:
-        path = getattr(element, "path", None)
-        mime = getattr(element, "mime", "") or ""
-        if path and (mime.startswith("image/") or Path(path).suffix.lower() in {".png", ".jpg", ".jpeg"}):
-            return base64.b64encode(Path(path).read_bytes()).decode("utf-8")
-    return None
-
-
 def _append_badges(report: str, result: dict[str, Any]) -> str:
     fraud = result.get("fraud_score")
-    if fraud:
+    if fraud and fraud.get("risk_level") not in {"NOT_ASSESSED", "UNKNOWN"}:
         probability = float(fraud.get("fraud_probability", 0.0))
         report += f"\n\n## Fraud Risk\n{fraud.get('risk_level', 'UNKNOWN')} ({probability:.2%})"
 
     forecast = result.get("forecast")
-    if forecast:
+    if forecast and forecast.get("direction") not in {"UNAVAILABLE", None}:
         confidence = float(forecast.get("confidence", 0.0))
         report += f"\n\n## Forecast\n{forecast.get('direction', 'UNAVAILABLE')} ({confidence:.2%} confidence)"
     return report
@@ -51,8 +40,7 @@ async def on_chat_start() -> None:
     await cl.Message(
         content=(
             "# FinSight AI\n"
-            "Ask a financial research question. Optional: attach a single chart screenshot (PNG/JPG, ≤10 MB). "
-            "Other file types are not supported."
+            "Ask a financial research question about the indexed companies and trained model outputs."
         )
     ).send()
 
@@ -63,6 +51,15 @@ async def on_message(message: cl.Message) -> None:
     if not query:
         await cl.Message(content="Please enter a financial question.").send()
         return
+    if message.elements:
+        await cl.Message(
+            content=(
+                "Image upload is disabled for this demo because the current pipeline does "
+                "not include OCR or a vision model. Please ask a text question about one "
+                "of the supported tickers: AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA, JPM, V, JNJ."
+            )
+        ).send()
+        return
 
     started = time.perf_counter()
     status = cl.Message(content="Running FinSight agents...")
@@ -71,7 +68,7 @@ async def on_message(message: cl.Message) -> None:
     try:
         graph_input = {
             "query": query,
-            "image_data": await _read_uploaded_image(message),
+            "image_data": None,
             "retry_count": 0,
             "trace_log": [],
         }

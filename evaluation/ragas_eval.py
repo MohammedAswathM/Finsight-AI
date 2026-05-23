@@ -93,6 +93,8 @@ def _evaluate_one(row: Dict[str, Any], groq_key: str) -> pd.DataFrame:
             max_retries=0,
         )
     )
+    if hasattr(answer_relevancy, "strictness"):
+        answer_relevancy.strictness = 1
     result = evaluate(
         single,
         metrics=[faithfulness, answer_relevancy, LLMContextPrecisionWithoutReference()],
@@ -219,6 +221,25 @@ def run_ragas(
         return fallback
 
 
+def _compact_report(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    out = df.copy()
+    if "question" not in out and "user_input" in out:
+        out["question"] = out["user_input"]
+    if "context_precision" not in out and "llm_context_precision_without_reference" in out:
+        out["context_precision"] = out["llm_context_precision_without_reference"]
+
+    columns = [
+        "question",
+        "faithfulness",
+        "answer_relevancy",
+        "context_precision",
+        "note",
+    ]
+    return out[[col for col in columns if col in out.columns]]
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run resumable RAGAS evaluation.")
     parser.add_argument("--force-dataset", action="store_true", help="Rebuild graph outputs before judging.")
@@ -235,13 +256,14 @@ if __name__ == "__main__":
         default=20.0,
         help="Seconds to pause between evaluated queries to respect Groq TPM limits.",
     )
+    parser.add_argument("--full", action="store_true", help="Print full RAGAS dataframe including contexts.")
     args = parser.parse_args()
-    print(
-        run_ragas(
-            force_dataset=args.force_dataset,
-            limit=args.limit,
-            key_indexes=args.key_indexes,
-            reset_results=args.reset_results,
-            sleep_between=args.sleep_between,
-        ).to_string(index=False)
+    result_df = run_ragas(
+        force_dataset=args.force_dataset,
+        limit=args.limit,
+        key_indexes=args.key_indexes,
+        reset_results=args.reset_results,
+        sleep_between=args.sleep_between,
     )
+    display_df = result_df if args.full else _compact_report(result_df)
+    print(display_df.to_string(index=False))

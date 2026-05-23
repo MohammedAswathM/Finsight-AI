@@ -1,6 +1,7 @@
 """Synthesizer node — combines all agent outputs into the final markdown report."""
 from __future__ import annotations
 
+import re
 from typing import Any, Dict
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -55,6 +56,14 @@ Forecast: {forecast}""",
 
 
 def synthesizer_node(state: AgentState) -> Dict[str, Any]:
+    fraud_score = state.get("fraud_score")
+    if isinstance(fraud_score, dict) and fraud_score.get("risk_level") in {"NOT_ASSESSED", "UNKNOWN"}:
+        fraud_score = None
+
+    forecast = state.get("forecast")
+    if isinstance(forecast, dict) and forecast.get("direction") in {"UNAVAILABLE", None}:
+        forecast = None
+
     try:
         response = invoke_prompt_with_fallback(
             SYNTHESIZER_PROMPT,
@@ -63,13 +72,32 @@ def synthesizer_node(state: AgentState) -> Dict[str, Any]:
                 "rag_result": safe_get(state, "rag_result", "No filing data retrieved."),
                 "sources": ", ".join(state.get("sources") or []) or "none",
                 "sql_result": safe_get(state, "sql_result", "No price data retrieved."),
-                "fraud_score": safe_get(state, "fraud_score", "Not assessed"),
+                "fraud_score": fraud_score or "None",
                 "sentiment_result": safe_get(state, "sentiment_result", "No sentiment data."),
-                "forecast": safe_get(state, "forecast", "No forecast available."),
+                "forecast": forecast or "None",
             },
             temperature=0.2,
         )
         report = response.content
+        if fraud_score is None:
+            report = re.sub(
+                r"\n?## Fraud Risk Assessment\n(?:.*?)(?=\n## |\Z)",
+                "\n",
+                report,
+                flags=re.DOTALL,
+            ).strip()
+        for empty_section in ("Price & Market Data", "News Sentiment", "20-Day Outlook"):
+            report = re.sub(
+                rf"\n?## {re.escape(empty_section)}\n\s*Data not available\.?\s*(?=\n## |\Z)",
+                "\n",
+                report,
+                flags=re.DOTALL,
+            ).strip()
+        report = re.sub(
+            r"\s+However, specific price and market data, fraud risk assessment, news sentiment, and forecast data are not available\.",
+            "",
+            report,
+        )
     except Exception as exc:
         report = (
             f"# FinSight AI Report\n\n"

@@ -29,9 +29,9 @@ Rules for agents_to_call:
 - "sql"       -> stock prices, volume, historical OHLCV, trends over a period
 - "chart"     -> any visual/trend request (always pair with "sql")
 - "sentiment" -> news, market mood, analyst opinion, headlines
-- "fraud"     -> transaction fraud, payment risk, suspicious card activity (pair with "sql")
+- "fraud"     -> transaction fraud, payment risk, suspicious card activity (pair with "sql"); do not use for normal stock/company analysis
 - "forecast"  -> outlook, prediction, future price direction
-- For broad/comprehensive questions, include ALL six agents.
+- For broad/comprehensive company-stock questions, include rag/sql/chart/sentiment/forecast. Include fraud only when transaction fraud is explicitly requested.
 - Always include at least one agent.""",
         ),
         ("human", "User query: {query}"),
@@ -40,8 +40,10 @@ Rules for agents_to_call:
 
 
 def planner_node(state: AgentState) -> Dict[str, Any]:
+    query_text = state.get("query", "")
+    lowered_query = query_text.lower()
     try:
-        response = invoke_prompt_with_fallback(PLANNER_PROMPT, {"query": state["query"]})
+        response = invoke_prompt_with_fallback(PLANNER_PROMPT, {"query": query_text})
         parsed = json.loads(strip_code_fence(response.content))
         plan = parsed.get("plan") or ["Research the query."]
         agents = [a for a in parsed.get("agents_to_call", []) if a in VALID_AGENTS]
@@ -49,12 +51,19 @@ def planner_node(state: AgentState) -> Dict[str, Any]:
             agents = ["rag", "sql", "chart", "sentiment", "forecast"]
     except Exception as exc:  # LLM/JSON failure — safe fallback: call everyone
         plan = ["Fallback: run all agents"]
-        agents = ["rag", "sql", "chart", "sentiment", "fraud", "forecast"]
+        agents = ["rag", "sql", "chart", "sentiment", "forecast"]
+        if any(term in lowered_query for term in ("fraud", "fraudulent", "transaction", "card")):
+            agents.append("fraud")
         return {
             "plan": plan,
             "agents_to_call": agents,
             "trace_log": append_trace(f"Planner: fallback (parse error: {exc}) -> {agents}"),
         }
+
+    if "fraud" in agents and not any(
+        term in lowered_query for term in ("fraud", "fraudulent", "transaction", "card", "payment")
+    ):
+        agents = [agent for agent in agents if agent != "fraud"]
 
     return {
         "plan": plan,

@@ -12,7 +12,8 @@ fallbacks so the graph is always runnable and the import never breaks CI.
 """
 from __future__ import annotations
 
-from typing import Any, Dict
+import re
+from typing import Any, Dict, Optional
 
 from langgraph.graph import END, StateGraph
 
@@ -83,15 +84,103 @@ except Exception:  # noqa: BLE001
 # Forecast node — owned by Member 3. Uses predict_trend() wrapper.
 # ---------------------------------------------------------------------------
 
-_TICKERS = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "NFLX", "AMD"]
+_TICKERS = {
+    "AAPL": "AAPL",
+    "APPLE": "AAPL",
+    "MSFT": "MSFT",
+    "MICROSOFT": "MSFT",
+    "NVDA": "NVDA",
+    "NVIDIA": "NVDA",
+    "TSLA": "TSLA",
+    "TESLA": "TSLA",
+    "AMZN": "AMZN",
+    "AMAZON": "AMZN",
+    "GOOGL": "GOOGL",
+    "GOOGLE": "GOOGL",
+    "ALPHABET": "GOOGL",
+    "META": "META",
+    "AMD": "AMD",
+    "NFLX": "NFLX",
+    "NETFLIX": "NFLX",
+}
+_STOP_SYMBOLS = {"THE", "AND", "FOR", "WITH", "FROM", "SHOW", "WHAT", "WAS", "ARE", "HOW", "Q"}
+_SUPPORTED_DEMO_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "JPM", "V", "JNJ"]
+_FINANCIAL_TERMS = {
+    "10-k",
+    "filing",
+    "filings",
+    "revenue",
+    "sales",
+    "risk",
+    "risks",
+    "stock",
+    "price",
+    "trend",
+    "market",
+    "sentiment",
+    "news",
+    "outlook",
+    "forecast",
+    "volatility",
+    "fraud",
+    "transaction",
+    "earnings",
+    "income",
+    "cash",
+    "dividend",
+    "valuation",
+    "shares",
+}
+_SUPPORTED_COMPANY_NAMES = {
+    "apple",
+    "microsoft",
+    "google",
+    "alphabet",
+    "amazon",
+    "nvidia",
+    "meta",
+    "tesla",
+    "jpmorgan",
+    "visa",
+    "johnson",
+}
 
 
-def _extract_ticker(query: str) -> str:
+def _extract_ticker(query: str) -> Optional[str]:
     q = query.upper()
-    for t in _TICKERS:
-        if t in q:
-            return t
-    return "AAPL"  # demo default
+    for alias, ticker in _TICKERS.items():
+        if alias in q:
+            return ticker
+    return None
+
+
+def _unsupported_symbol(query: str) -> Optional[str]:
+    for token in re.findall(r"\b[A-Z]{2,5}\b", query or ""):
+        if token not in _STOP_SYMBOLS and token not in set(_TICKERS.values()) and token not in _SUPPORTED_DEMO_TICKERS:
+            return token
+    return None
+
+
+def _is_in_scope_query(query: str) -> bool:
+    lowered = (query or "").lower()
+    if _extract_ticker(query):
+        return True
+    if any(name in lowered for name in _SUPPORTED_COMPANY_NAMES):
+        return True
+    return any(term in lowered for term in _FINANCIAL_TERMS)
+
+
+def _guardrail_report(reason: str) -> str:
+    supported = ", ".join(_SUPPORTED_DEMO_TICKERS)
+    return (
+        "## Out of Scope\n"
+        f"{reason}\n\n"
+        "## Supported Questions\n"
+        "Ask about SEC filing facts, revenue, risks, stock prices, charts, sentiment, "
+        "20-day outlook, volatility, or credit-card transaction fraud.\n\n"
+        "## Supported Tickers\n"
+        f"{supported}"
+    )
 
 
 def forecast_node(state: AgentState) -> Dict[str, Any]:
@@ -101,6 +190,16 @@ def forecast_node(state: AgentState) -> Dict[str, Any]:
     into a single `forecast` dict so the state contract stays unchanged.
     """
     ticker = _extract_ticker(state.get("query", ""))
+    if not ticker:
+        return {
+            "forecast": {
+                "direction": "UNAVAILABLE",
+                "confidence": 0.0,
+                "message": "No supported ticker was found for forecasting.",
+            },
+            "trace_log": append_trace("Forecast agent: skipped unsupported or missing ticker"),
+        }
+
     merged: Dict[str, Any] = {"ticker": ticker, "days_ahead": 20}
     trace_parts = []
 
@@ -155,16 +254,32 @@ def forecast_node(state: AgentState) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _agent_selected(state: AgentState, agent_name: str) -> bool:
+    agents = state.get("agents_to_call") or []
+    if agent_name == "fraud" and state.get("transaction_features"):
+        return True
+    return agent_name in agents
+
+
+def _run_if_selected(agent_name: str, fn):
+    def _wrapped(state: AgentState) -> Dict[str, Any]:
+        if not _agent_selected(state, agent_name):
+            return {"trace_log": append_trace(f"{agent_name.title()} agent: skipped by planner")}
+        return fn(state)
+
+    return _wrapped
+
+
 def build_graph() -> StateGraph:
     graph = StateGraph(AgentState)
 
     graph.add_node("planner", planner_node)
-    graph.add_node("rag", rag_run)
-    graph.add_node("sql", sql_run)
-    graph.add_node("chart", chart_run)
-    graph.add_node("sentiment", sentiment_run)
-    graph.add_node("fraud", fraud_run)
-    graph.add_node("forecaster", forecast_node)
+    graph.add_node("rag", _run_if_selected("rag", rag_run))
+    graph.add_node("sql", _run_if_selected("sql", sql_run))
+    graph.add_node("chart", _run_if_selected("chart", chart_run))
+    graph.add_node("sentiment", _run_if_selected("sentiment", sentiment_run))
+    graph.add_node("fraud", _run_if_selected("fraud", fraud_run))
+    graph.add_node("forecaster", _run_if_selected("forecast", forecast_node))
     graph.add_node("evaluator", evaluator_node)
     graph.add_node("retry_bump", increment_retry)
     graph.add_node("synthesizer", synthesizer_node)
@@ -233,6 +348,31 @@ def run_graph(inputs: Dict[str, Any]) -> AgentState:
         "trace_log": [],
     }
     defaults.update(inputs)
+    query = defaults.get("query", "")
+    unsupported = _unsupported_symbol(query)
+    if unsupported:
+        defaults.update(
+            {
+                "final_report": _guardrail_report(
+                    f"`{unsupported}` is not part of the indexed filing corpus or trained model universe."
+                ),
+                "trace_log": append_trace(
+                    f"Input guard: unsupported ticker/symbol '{unsupported}' skipped agent execution"
+                ),
+            }
+        )
+        return defaults
+
+    if not _is_in_scope_query(query):
+        defaults.update(
+            {
+                "final_report": _guardrail_report(
+                    "FinSight AI is a financial research demo, so this question was not sent to the agents."
+                ),
+                "trace_log": append_trace("Input guard: out-of-scope query skipped agent execution"),
+            }
+        )
+        return defaults
     return _compile().invoke(defaults)
 
 

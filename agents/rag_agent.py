@@ -21,10 +21,12 @@ from __future__ import annotations
 import logging
 import sys
 import os
+import re
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from langchain.storage import LocalFileStore, create_kv_docstore
+from langchain.schema import Document
 
 # ── make sure project root is on the path when running standalone ──────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -44,6 +46,29 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 # ── module-level singletons (initialised lazily on first call) ─────────────
 _retriever = None
 _docstore  = None
+_vectorstore = None
+
+_COMPANY_ALIASES = {
+    "apple": "Apple_2024",
+    "aapl": "Apple_2024",
+    "microsoft": "Microsoft_2023",
+    "msft": "Microsoft_2023",
+    "amazon": "Amazon_2023",
+    "amzn": "Amazon_2023",
+    "alphabet": "Alphabet_2023",
+    "google": "Alphabet_2023",
+    "googl": "Alphabet_2023",
+    "meta": "Meta_2023",
+    "facebook": "Meta_2023",
+}
+
+
+def _company_filter_from_query(query: str) -> Optional[str]:
+    lowered = query.lower()
+    for alias, company in _COMPANY_ALIASES.items():
+        if re.search(rf"\b{re.escape(alias)}\b", lowered):
+            return company
+    return None
 
 
 def _ensure_retriever():
@@ -51,12 +76,13 @@ def _ensure_retriever():
     Initialise the retriever singleton.
     If no documents are in the vector store, trigger ingestion automatically.
     """
-    global _retriever, _docstore
+    global _retriever, _docstore, _vectorstore
 
     if _retriever is not None:
         return _retriever
 
     vectorstore = get_vectorstore()
+    _vectorstore = vectorstore
 
     # Check whether anything has been ingested yet
     try:
@@ -86,6 +112,64 @@ def _ensure_retriever():
         )
 
     return _retriever
+
+
+def _filter_company_docs(docs, company: Optional[str]):
+    if not company:
+        return docs
+    return [doc for doc in docs if doc.metadata.get("company") == company]
+
+
+def _fallback_company_search(query: str, company: Optional[str], k: int = 5):
+    if not company or _vectorstore is None:
+        return []
+
+
+def _lexical_company_search(query: str, company: Optional[str]):
+    """Small deterministic supplement for exact financial table labels."""
+    if not company:
+        return []
+    lowered = query.lower()
+    if not any(term in lowered for term in ("total revenue", "total revenues", "net sales")):
+        return []
+
+    filing_path = BASE_DIR / "data" / "pdfs" / f"{company}_10K.htm"
+    if not filing_path.exists():
+        return []
+
+    try:
+        from bs4 import BeautifulSoup
+
+        text = BeautifulSoup(filing_path.read_text(encoding="utf-8", errors="ignore"), "lxml").get_text("\n")
+        normalized = re.sub(r"\n{2,}", "\n", text)
+        patterns = ["Total revenue", "Total net sales", "Net sales"]
+        for pattern in patterns:
+            if pattern == "Total revenue":
+                index = normalized.lower().rfind(pattern.lower())
+            else:
+                index = normalized.lower().find(pattern.lower())
+            if index < 0:
+                continue
+            start = max(0, index - 450)
+            end = min(len(normalized), index + 750)
+            return [
+                Document(
+                    page_content=normalized[start:end].strip(),
+                    metadata={
+                        "source": filing_path.name,
+                        "company": company,
+                        "filing": "10-K",
+                    },
+                )
+            ]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Lexical filing search failed: %s", exc)
+    return []
+    try:
+        return _vectorstore.similarity_search(query, k=k, filter={"company": company})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Company-filtered vector search failed: %s", exc)
+        return []
 
 
 # ── formatting helper ──────────────────────────────────────────────────────
@@ -144,7 +228,17 @@ def run(state: AgentState) -> AgentState:
 
     try:
         retriever = _ensure_retriever()
+        company = _company_filter_from_query(query)
         docs = get_relevant_documents(query, retriever=retriever)
+        filtered_docs = _filter_company_docs(docs, company)
+        if company and len(filtered_docs) < min(2, len(docs)):
+            filtered_docs = _fallback_company_search(query, company, k=5)
+        docs = filtered_docs if company else docs
+        lexical_docs = _lexical_company_search(query, company)
+        if lexical_docs:
+            seen_sources = {doc.page_content for doc in lexical_docs}
+            docs = lexical_docs + [doc for doc in docs if doc.page_content not in seen_sources]
+            docs = docs[:5]
         return {
             "rag_result": format_result(docs),
             "sources": [doc.metadata.get("source", "unknown") for doc in docs],

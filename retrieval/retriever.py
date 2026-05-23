@@ -97,7 +97,7 @@ def build_retriever(
     parent_retriever.search_kwargs = {"k": k}
     logger.info("ParentDocumentRetriever built (k=%d).", k)
 
-    env_flag = os.getenv("RAG_USE_COMPRESSION", "1").strip().lower()
+    env_flag = os.getenv("RAG_USE_COMPRESSION", "0").strip().lower()
     if env_flag in {"0", "false", "no", "off"}:
         use_compression = False
 
@@ -142,6 +142,6 @@ def get_relevant_documents(
         retriever = build_retriever(**kwargs)
 
     logger.info("Retrieving documents for query: '%s'", query[:80])
-    docs = retriever.get_relevant_documents(query)
+    docs = retriever.invoke(query)
     logger.info("Retrieved %d document(s).", len(docs))
     return docs

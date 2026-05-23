@@ -212,8 +212,7 @@ class ChartAgent:
             # Extract ticker and period from query
             ticker = self._extract_ticker_from_query(query)
             if not ticker:
-                # Default to AAPL if not found
-                ticker = "AAPL"
+                return "Error: No supported ticker found for chart generation."
             
             period = self._extract_period_from_query(query)
             chart_type = self._determine_chart_type(query)
@@ -265,6 +264,11 @@ def run_chart(state: AgentState) -> Dict[str, Any]:
     try:
         agent = get_chart_agent()
         chart_path = agent.run(query, sql_result)
+        if chart_path.startswith("Error:"):
+            return {
+                "chart_path": None,
+                "trace_log": append_trace(f"Chart agent: {chart_path}"),
+            }
         return {
             "chart_path": chart_path,
             "trace_log": append_trace(f"Chart agent: Generated chart - {chart_path}"),
