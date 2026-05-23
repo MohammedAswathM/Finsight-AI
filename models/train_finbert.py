@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Dict, Tuple
@@ -188,8 +189,12 @@ def main() -> None:
         trainer.train()
 
         # Persist fine-tuned model for local inference.
+        # On Windows, safetensors can fail with file-mapped section locks.
+        # Save to a clean directory and use the PyTorch bin format for robustness.
+        if OUT_DIR.exists():
+            shutil.rmtree(OUT_DIR, ignore_errors=True)
         OUT_DIR.mkdir(parents=True, exist_ok=True)
-        trainer.model.save_pretrained(OUT_DIR)
+        trainer.model.save_pretrained(OUT_DIR, safe_serialization=False)
         tokenizer.save_pretrained(OUT_DIR)
         mlflow.log_param("finetuned_dir", str(OUT_DIR))
 

@@ -84,11 +84,18 @@ async def on_message(message: cl.Message) -> None:
     await cl.Message(content=_append_badges(report, result)).send()
 
     chart_path = result.get("chart_path")
-    if chart_path and Path(chart_path).exists():
-        await cl.Message(
-            content="Price chart",
-            elements=[cl.Image(name="chart", path=chart_path, display="inline")],
-        ).send()
+    if chart_path:
+        resolved_chart_path = (_PROJECT_ROOT / chart_path).resolve()
+        if resolved_chart_path.exists():
+            try:
+                await cl.Message(
+                    content="Price chart",
+                    elements=[cl.Image(name="chart", path=str(resolved_chart_path), display="inline")],
+                ).send()
+            except Exception as exc:  # noqa: BLE001
+                await cl.Message(content=f"Price chart could not be displayed: `{exc}`").send()
+        else:
+            await cl.Message(content=f"Price chart file was not found: `{chart_path}`").send()
 
     trace = format_trace(result.get("trace_log"))
     await cl.Message(content=f"## Agent Trace\n```text\n{trace}\n\nTotal runtime: {elapsed_ms:.0f} ms\n```").send()
