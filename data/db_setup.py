@@ -78,12 +78,29 @@ def fetch_and_store_prices(tickers: list[str], period: str = "2y") -> None:
     for ticker in tickers:
         print(f"Fetching {ticker}...")
         try:
-            # Download data from yfinance
+            # Download data from yfinance. Ticker.history can intermittently
+            # return empty for valid tickers, so fall back to yf.download.
             stock = yf.Ticker(ticker)
-            df = stock.history(period=period)
+            df = stock.history(period=period, auto_adjust=False)
+            if df.empty:
+                print(f"  Primary fetch returned no rows for {ticker}; retrying with yf.download...")
+                df = yf.download(
+                    ticker,
+                    period=period,
+                    auto_adjust=False,
+                    progress=False,
+                    threads=False,
+                )
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
             
             if df.empty:
-                print(f"  Warning: No data for {ticker}")
+                cursor.execute("SELECT COUNT(*) FROM prices WHERE ticker = ?", (ticker,))
+                existing_rows = cursor.fetchone()[0]
+                if existing_rows:
+                    print(f"  Warning: No fresh data for {ticker}; retaining {existing_rows} existing rows")
+                else:
+                    print(f"  Warning: No data for {ticker}")
                 continue
             
             # Reset index to get date as column
