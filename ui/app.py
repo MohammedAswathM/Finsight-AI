@@ -6,8 +6,10 @@ Run:
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,9 @@ import chainlit as cl
 from orchestrator.graph import run_graph
 from ui.trace_panel import format_trace
 
+REPORT_DIR = _PROJECT_ROOT / "outputs" / "reports"
+GUARDRAIL_TRACE_PREFIX = "Input guard:"
+
 
 def _append_badges(report: str, result: dict[str, Any]) -> str:
     fraud = result.get("fraud_score")
@@ -33,6 +38,45 @@ def _append_badges(report: str, result: dict[str, Any]) -> str:
         confidence = float(forecast.get("confidence", 0.0))
         report += f"\n\n## Forecast\n{forecast.get('direction', 'UNAVAILABLE')} ({confidence:.2%} confidence)"
     return report
+
+
+def _report_filename(query: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", query.lower()).strip("_")[:60]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"finsight_report_{slug or 'query'}_{timestamp}.md"
+
+
+def _write_report_file(query: str, report: str, result: dict[str, Any], elapsed_ms: float) -> Path:
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    trace = format_trace(result.get("trace_log"))
+    chart_path = result.get("chart_path") or "N/A"
+    report_path = REPORT_DIR / _report_filename(query)
+    report_path.write_text(
+        (
+            "# FinSight AI Report\n\n"
+            f"**Query:** {query}\n\n"
+            f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            f"**Runtime:** {elapsed_ms:.0f} ms\n\n"
+            f"**Chart Path:** {chart_path}\n\n"
+            "---\n\n"
+            f"{report}\n\n"
+            "---\n\n"
+            "## Agent Trace\n\n"
+            "```text\n"
+            f"{trace}\n\n"
+            f"Total runtime: {elapsed_ms:.0f} ms\n"
+            "```\n"
+        ),
+        encoding="utf-8",
+    )
+    return report_path
+
+
+def _should_offer_download(result: dict[str, Any]) -> bool:
+    trace = result.get("trace_log") or []
+    if any(str(item).startswith(GUARDRAIL_TRACE_PREFIX) for item in trace):
+        return False
+    return bool(result.get("final_report"))
 
 
 @cl.on_chat_start
@@ -81,7 +125,25 @@ async def on_message(message: cl.Message) -> None:
 
     elapsed_ms = (time.perf_counter() - started) * 1000
     report = result.get("final_report") or "No report generated."
-    await cl.Message(content=_append_badges(report, result)).send()
+    display_report = _append_badges(report, result)
+    await cl.Message(content=display_report).send()
+
+    if _should_offer_download(result):
+        try:
+            report_path = _write_report_file(query, display_report, result, elapsed_ms)
+            await cl.Message(
+                content="Download report",
+                elements=[
+                    cl.File(
+                        name="FinSight_Report.md",
+                        content=report_path.read_bytes(),
+                        mime="text/markdown",
+                        display="inline",
+                    )
+                ],
+            ).send()
+        except Exception as exc:  # noqa: BLE001
+            await cl.Message(content=f"Report download could not be prepared: `{exc}`").send()
 
     chart_path = result.get("chart_path")
     if chart_path:
